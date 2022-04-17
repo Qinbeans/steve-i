@@ -1,0 +1,12 @@
+.vscode
+.dockerignore
+.gitignore
+.pid
+docker-compose.yml
+Dockerfile
+log.txt
+run.sh
+steve.jpg
+steve1.code-workspace
+target
+log.txt

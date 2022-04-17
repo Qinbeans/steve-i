@@ -1,0 +1,36 @@
+version: '3'
+services:
+  cloud_server:
+    build: .
+    command: bash -c "diesel setup && echo DIESEL && steve"
+    working_dir: /steve
+    volumes:
+      - .:/steve
+    depends_on:
+      db:
+        condition: service_healthy
+    links:
+      - db
+    environment:
+      - PREFIX=${PREFIX}
+      - DATABASE_URL=mysql://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+  db:
+    image: "mariadb:latest"
+    restart: always
+    command: --port 5432
+    volumes:
+      - /home/ryan/Documents/stevedb:/var/lib/mysql
+    ports:
+      - "5432:5432"
+    environment:
+      - MARIADB_ROOT_PASSWORD=${DB_PASS}
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASS}
+    healthcheck:
+            test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost","-P", "5432"]
+            timeout: 5s
+            retries: 10
+volumes:
+  db:
