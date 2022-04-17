@@ -12,6 +12,7 @@ use serenity::utils::Colour;
 use songbird::input::restartable::Restartable;
 use youtube_dl::{YoutubeDlOutput,YoutubeDl};
 use crate::log::{log::logf, error::errf};
+use crate::commands::misc::Guilds;
 
 //##############################START##################################
 // Grabbed from:
@@ -22,9 +23,17 @@ use crate::log::{log::logf, error::errf};
 #[usage("deafen")]
 #[only_in("guilds")]
 pub async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
 
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -32,7 +41,7 @@ pub async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
     let handler_lock = match manager.get(guild_id) {
         Some(handler) => handler,
         None => {
-            errf("Not in a voice channel", &gid);
+            errf("Not in a voice channel", guild_name);
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
@@ -42,14 +51,14 @@ pub async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
     let mut handler = handler_lock.lock().await;
 
     if handler.is_deaf() {
-        errf("Already deafened", &gid);
+        errf("Already deafened", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Already deafened").await);
     } else {
         if let Err(e) = handler.deafen(true).await {
-            errf(&format!("Failed: {}",e), &gid);
+            errf(&format!("Failed: {}",e), guild_name);
             check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
         }
-        logf("Deafened", &gid);
+        logf("Deafened", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Deafened").await);
     }
 
@@ -61,10 +70,17 @@ pub async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("join")]
 #[only_in("guilds")]
 pub async fn join(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
-
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     let channel_id = guild
         .voice_states.get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
@@ -72,7 +88,7 @@ pub async fn join(ctx: &Context, msg: &Message) -> CommandResult {
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            errf("Not in a voice channel", &gid);
+            errf("Not in a voice channel", guild_name);
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
@@ -92,9 +108,17 @@ pub async fn join(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("leave")]
 #[only_in("guilds")]
 pub async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
 
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -102,13 +126,13 @@ pub async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
 
     if has_handler {
         if let Err(e) = manager.remove(guild_id).await {
-            errf(&format!("Failed: {}",e), &gid);
+            errf(&format!("Failed: {}",e), guild_name);
             check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
         }
-        logf("Left", &gid);
+        logf("Left", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Left voice channel").await);
     } else {
-        errf("Not in a voice channel", &gid);
+        errf("Not in a voice channel", guild_name);
         check_msg(msg.reply(ctx, "Not in a voice channel").await);
     }
 
@@ -120,9 +144,17 @@ pub async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("mute")]
 #[only_in("guilds")]
 pub async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
 
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -130,7 +162,7 @@ pub async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
     let handler_lock = match manager.get(guild_id) {
         Some(handler) => handler,
         None => {
-            errf("Not in a voice channel", &gid);
+            errf("Not in a voice channel", guild_name);
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
@@ -140,15 +172,15 @@ pub async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
     let mut handler = handler_lock.lock().await;
 
     if handler.is_mute() {
-        errf("Already muted", &gid);
+        errf("Already muted", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Already muted").await);
     } else {
         if let Err(e) = handler.mute(true).await {
-            errf(&format!("Failed: {}",e), &gid);
+            errf(&format!("Failed: {}",e), guild_name);
             check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
         }
 
-        logf("Muted", &gid);
+        logf("Muted", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Now muted").await);
     }
 
@@ -160,10 +192,11 @@ pub async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("p(lay) <song url|playlist url>")]
 #[only_in("guilds")]
 pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let mut guild_name = "None";
     let url = match args.single::<String>() {
         Ok(url) => url,
         Err(_) => {
-            errf("No url provided", "None");
+            errf("No url provided", guild_name);
             check_msg(msg.channel_id.say(&ctx.http, "Must provide a URL to a video or audio").await);
 
             return Ok(());
@@ -176,10 +209,17 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         searchable = true;
     }
 
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
-    
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
+
     let channel_id = guild
         .voice_states.get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
@@ -187,7 +227,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            errf("Not in a voice channel", &gid);
+            errf("Not in a voice channel", guild_name);
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
@@ -205,7 +245,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             let source = match Restartable::ytdl_search(url, true).await {
                 Ok(source) => source,
                 Err(e) => {
-                    errf(&format!("Err not searchable {:?}", e), &gid);
+                    errf(&format!("Err not searchable {:?}", e), guild_name);
                     check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
                     return Ok(());
@@ -226,7 +266,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                                 let source = match Restartable::ytdl(entry.url.unwrap(), true).await {
                                     Ok(source) => source,
                                     Err(e) => {
-                                        errf(&format!("Err not searchable {:?}", e), &gid);
+                                        errf(&format!("Err not searchable {:?}", e), guild_name);
 
                                         check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
@@ -237,7 +277,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                             }                            
                         }
                         YoutubeDlOutput::SingleVideo(yt_vid) => {
-                            errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), &gid);
+                            errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), guild_name);
                             check_msg(msg.channel_id.say(&ctx.http, "Uh oh dead end").await);
                         }
                     }
@@ -246,7 +286,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 let source = match Restartable::ytdl(url, true).await {
                     Ok(source) => source,
                     Err(e) => {
-                        errf(&format!("Err invlaid link {:?}", e), &gid);
+                        errf(&format!("Err invlaid link {:?}", e), guild_name);
 
                         check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
@@ -259,20 +299,20 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         
         if handler.queue().is_empty() {
             if let Err(e) = handler.queue().resume(){
-                errf(&format!("Failed {:?}", e), &gid);
+                errf(&format!("Failed {:?}", e), guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
             }else{
-                logf("Playing...", &gid);
+                logf("Playing...", guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
             }
         }else{
-            logf("Queued", &gid);
+            logf("Queued", guild_name);
             check_msg(msg.channel_id.say(&ctx.http, "Queued").await);
         }
         //make anew
     } else {
         //make anew
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
     }
 
@@ -284,9 +324,17 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[usage("undeafen")]
 #[only_in("guilds")]
 pub async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
 
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -294,13 +342,13 @@ pub async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         if let Err(e) = handler.deafen(false).await {
-            errf(&format!("Failed {:?}", e), &gid);
+            errf(&format!("Failed {:?}", e), guild_name);
             check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
         }
-        logf("Undeafened", &gid);
+        logf("Undeafened", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Undeafened").await);
     } else {
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to undeafen in").await);
     }
 
@@ -312,9 +360,17 @@ pub async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("unmute")]
 #[only_in("guilds")]
 pub async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -322,13 +378,13 @@ pub async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         if let Err(e) = handler.mute(false).await {
-            errf(&format!("Failed {:?}", e), &gid);
+            errf(&format!("Failed {:?}", e), guild_name);
             check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
         }
-        logf("Unmuted", &gid);
+        logf("Unmuted", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Unmuted").await);
     } else {
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to unmute in").await);
     }
 
@@ -349,16 +405,24 @@ fn check_msg(result: SerenityResult<Message>) {
 #[usage("stop")]
 #[only_in("guilds")]
 pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
 
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
-        logf("Stopping", &gid);
+        logf("Stopping", guild_name);
         check_msg(msg.channel_id.send_message(&ctx.http,|m|{
             m.tts(false);
             m.embed(|e| {
@@ -373,7 +437,7 @@ pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
         }).await);
         handler.stop();
     }else{
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.send_message(&ctx.http,|m|{
             m.tts(false);
             m.embed(|e| {
@@ -394,9 +458,17 @@ pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("pause")]
 #[only_in("guilds")]
 pub async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -404,7 +476,7 @@ pub async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let handler = handler_lock.lock().await;
         if handler.queue().is_empty(){
-            errf("Nothing to pause", &gid);
+            errf("Nothing to pause", guild_name);
             check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                 m.tts(false);
                 m.embed(|e| {
@@ -418,11 +490,11 @@ pub async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
             }).await);
         }else{
             if let Err(e) = handler.queue().pause(){
-                errf(&format!("Failed {:?}", e), &gid);
+                errf(&format!("Failed {:?}", e), guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
             }
             else{
-                logf("Paused", &gid);
+                logf("Paused", guild_name);
                 check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                     m.tts(false);
                     m.embed(|e| {
@@ -438,7 +510,7 @@ pub async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
             }
         }
     }else{
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.send_message(&ctx.http,|m|{
             m.tts(false);
             m.embed(|e| {
@@ -459,9 +531,17 @@ pub async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("skip")]
 #[only_in("guilds")]
 pub async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -469,7 +549,7 @@ pub async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let handler = handler_lock.lock().await;
         if handler.queue().is_empty(){
-            errf("Nothing to skip", &gid);
+            errf("Nothing to skip", guild_name);
             check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                 m.tts(false);
                 m.embed(|e| {
@@ -484,11 +564,11 @@ pub async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
         }else{
             let thum = (*handler.queue().current().unwrap().metadata()).thumbnail.as_ref().unwrap().clone();
             if let Err(e) = handler.queue().skip(){
-                errf(&format!("Failed {:?}", e), &gid);
+                errf(&format!("Failed {:?}", e), guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
             }
             else{
-                logf("Skipped", &gid);
+                logf("Skipped", guild_name);
                 check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                     m.tts(false);
                     m.embed(|e| {
@@ -504,7 +584,7 @@ pub async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
             }
         }
     }else{
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.send_message(&ctx.http,|m|{
             m.tts(false);
             m.embed(|e| {
@@ -525,9 +605,17 @@ pub async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("resume")]
 #[only_in("guilds")]
 pub async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -535,7 +623,7 @@ pub async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let handler = handler_lock.lock().await;
         if handler.queue().is_empty(){
-            errf("Nothing to resume", &gid);
+            errf("Nothing to resume", guild_name);
             check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                 m.tts(false);
                 m.embed(|e| {
@@ -549,11 +637,11 @@ pub async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
             }).await);
         }else{
             if let Err(e) = handler.queue().resume(){
-                errf(&format!("Failed {:?}", e), &gid);
+                errf(&format!("Failed {:?}", e), guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
             }
             else{
-                logf("Resumed", &gid);
+                logf("Resumed", guild_name);
                 check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                     m.tts(false);
                     m.embed(|e| {
@@ -569,7 +657,7 @@ pub async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
             }
         }
     }else{
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.send_message(&ctx.http,|m|{
             m.tts(false);
             m.embed(|e| {
@@ -590,9 +678,17 @@ pub async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("list")]
 #[only_in("guilds")]
 pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
     
     let manager = songbird::get(ctx).await
         .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -600,7 +696,7 @@ pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let handler = handler_lock.lock().await;
         if handler.queue().is_empty(){
-            errf("Nothing to list", &gid);
+            errf("Nothing to list", guild_name);
             check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                 m.tts(false);
                 m.embed(|e| {
@@ -623,7 +719,7 @@ pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
                 list = format!("{}{:<2}:{:>100}\n",list,ind,(*el.metadata()).title.clone().unwrap().as_str());
                 ind += 1;
             }
-            logf("Logging list...", &gid);
+            logf("Logging list...", guild_name);
             check_msg(msg.channel_id.send_message(&ctx.http,|m|{
                 m.tts(false);
                 m.embed(|e| {
@@ -637,7 +733,7 @@ pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
             }).await);
         }
     }else{
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.send_message(&ctx.http,|m|{
             m.tts(false);
             m.embed(|e| {
@@ -658,10 +754,11 @@ pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
 #[usage("p(lay) <song url|playlist url>")]
 #[only_in("guilds")]
 pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let mut guild_name = "None";
     let url = match args.single::<String>() {
         Ok(url) => url,
         Err(_) => {
-            errf("No url provided", "None");
+            errf("No url provided", guild_name);
             check_msg(msg.channel_id.say(&ctx.http, "Must provide a URL to a video or audio").await);
 
             return Ok(());
@@ -674,10 +771,17 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         searchable = true;
     }
 
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
-    
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
+
     let channel_id = guild
         .voice_states.get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
@@ -685,7 +789,7 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            errf("Not in a voice channel to play in", &gid);
+            errf("Not in a voice channel", guild_name);
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
@@ -703,8 +807,7 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             let source = match Restartable::ytdl_search(url, true).await {
                 Ok(source) => source,
                 Err(e) => {
-                    errf(&format!("Err not searchable {:?}", e), &gid);
-
+                    errf(&format!("Err not searchable {:?}", e), guild_name);
                     check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
                     return Ok(());
@@ -725,7 +828,7 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
                                 let source = match Restartable::ytdl(entry.url.unwrap(), true).await {
                                     Ok(source) => source,
                                     Err(e) => {
-                                        errf(&format!("Err not invalid link {:?}", e), &gid);
+                                        errf(&format!("Err not searchable {:?}", e), guild_name);
 
                                         check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
@@ -736,7 +839,7 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
                             }                            
                         }
                         YoutubeDlOutput::SingleVideo(yt_vid) => {
-                            logf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), &gid);
+                            errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), guild_name);
                             check_msg(msg.channel_id.say(&ctx.http, "Uh oh dead end").await);
                         }
                     }
@@ -745,7 +848,7 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
                 let source = match Restartable::ytdl(url, true).await {
                     Ok(source) => source,
                     Err(e) => {
-                        errf(&format!("Err not invalid link {:?}", e), &gid);
+                        errf(&format!("Err invlaid link {:?}", e), guild_name);
 
                         check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
@@ -758,20 +861,20 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         
         if handler.queue().is_empty() {
             if let Err(e) = handler.queue().resume(){
-                errf(&format!("Failed {:?}", e), &gid);
+                errf(&format!("Failed {:?}", e), guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
             }else{
-                logf("Playing...", &gid);
+                logf("Playing...", guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
             }
         }else{
-            logf("Queued", &gid);
+            logf("Queued", guild_name);
             check_msg(msg.channel_id.say(&ctx.http, "Queued").await);
         }
         //make anew
     } else {
         //make anew
-        errf("Not in a voice channel to play in", &gid);
+        errf("Not in a voice channel to play in", guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
     }
 
@@ -783,9 +886,17 @@ pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[usage("boom")]
 #[only_in("guilds")]
 pub async fn boom(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let data_map = ctx.data.read().await;
+    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
-    let gid = format!("{}",guild_id.0);
+    let mut guild_name = "None";
+    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+        if let Some(g_name) = c_guild.name.as_ref() {
+            guild_name = g_name;
+        }
+    }
 
     let manager = songbird::get(ctx).await
     .expect("Songbird Voice client placed in at initialisation.").clone();
@@ -794,14 +905,14 @@ pub async fn boom(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         let mut handler = handler_lock.lock().await;
         handler.stop();
         if handler.queue().is_empty() {
-            errf("Queue is empty", &gid);
+            errf("Queue is empty", guild_name);
             check_msg(msg.reply(ctx, "Steve cannot kaboom :(").await);
         }
         while !handler.queue().is_empty(){
             handler.queue().dequeue(0);
         }
     }
-    logf("Boom", &gid);
+    logf("Boom", guild_name);
     check_msg(msg.reply(ctx, "KABOOM!!!").await);
 
     Ok(())

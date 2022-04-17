@@ -126,24 +126,33 @@ impl EventHandler for Handler{
      * Makes sure the bot exits when everyone else exits
      */
     async fn voice_state_update(&self, ctx: Context, _: Option<GuildId>, old: Option<VoiceState>, _: VoiceState){
+        let data_map = ctx.data.read().await;
+        let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
         let current_user = ctx.cache.current_user().await;
+        let mut guild_name = "None";
         let current_id = current_user.id.0;
         if let Some(o_channel) = old{
             if let Some(o_channel_id) = o_channel.channel_id{
                 if let Some(guild_id) = o_channel.guild_id{
+                    let i_guild_id = guild_id.0 as i64;
+                    let c_guild_raw = guild_cache.get_mut(&i_guild_id);
+                    if let Some(c_guild) = c_guild_raw{
+                        if let Some(c_guild_name) = c_guild.name.as_ref(){
+                            guild_name = &c_guild_name;
+                        }
+                    }
                     // get guild name
-                    let gid = format!("{}",guild_id.0);
                     let m_g_channels = guild_id.channels(&ctx.http).await;
                     let manager = songbird::get(&ctx).await
                         .expect("Songbird Voice client placed in at initialisation.").clone();
                     if let Err(e) = m_g_channels{
-                        errf(&format!("{}",e),&gid);
+                        errf(&format!("{}",e),guild_name);
                     }else if let Ok(r_g_channels) = m_g_channels{
                         if let Some(raw_members) = r_g_channels.get(&o_channel_id){
                             //passes
                             let members = raw_members.members(&ctx.cache).await;
                             if let Err(e) = members{
-                                errf(&format!("{}",e), &gid);
+                                errf(&format!("{}",e), guild_name);
                             }else if let Ok(r_members) = members{
                                 let mem_count = r_members.len();
                                 for mem in r_members{
@@ -152,12 +161,12 @@ impl EventHandler for Handler{
                                             let has_handler = manager.get(guild_id).is_some();
                                             if has_handler{
                                                 if let Err(e) = manager.remove(guild_id).await{
-                                                    errf(&format!("{}",e), &gid);
+                                                    errf(&format!("{}",e), guild_name);
                                                     return;
                                                 }
-                                                logf(&format!("'{}' has empty chat '{}'",guild_id.name(&ctx.cache).await.unwrap(),raw_members.name), &gid);
+                                                logf(&format!("'{}' has empty chat '{}'",guild_id.name(&ctx.cache).await.unwrap(),raw_members.name), guild_name);
                                             }else{
-                                                logf(&format!("No in guild '{}'",guild_id.name(&ctx.cache).await.unwrap()), &gid);
+                                                logf(&format!("No in guild '{}'",guild_id.name(&ctx.cache).await.unwrap()), guild_name);
                                             }
                                         }
                                         return;
@@ -169,13 +178,13 @@ impl EventHandler for Handler{
                         }
                     }
                 }else{
-                    errf("Channel not in guild", "None");
+                    errf("Channel not in guild", guild_name);
                 }
             }else{
-                errf("No channel id found", "None");
+                errf("No channel id found", guild_name);
             }
         }else{
-            errf("No old channel found", "None");
+            errf("No old channel found", guild_name);
         }
     }
 }
@@ -191,14 +200,18 @@ async fn main() {
                 let data_map = ctx.data.read().await;
                 let guild_cache = data_map.get::<Guilds>().unwrap().write().await;
                 let guild_raw = guild_cache.get(&guild_id);
+                let mut guild_name = "None";
                 if let Some(guild) = guild_raw{
+                    if let Some(tmp) = guild.name.as_ref(){
+                        guild_name = tmp;
+                    }
                     if let Some(prefix) = guild.prefix.as_ref(){
-                        logf(&format!("prefix {} changed!", prefix), &format!("{}",guild_id));
+                        logf(&format!("prefix {} changed!", prefix), guild_name);
                     }else{
-                        logf(&format!("prefix {}", def_pfx), &format!("{}",guild_id));
+                        logf(&format!("prefix {}", def_pfx), guild_name);
                     }
                 }else{
-                    errf("No guild found", &format!("{}",guild_id));
+                    errf("No guild found", &format!("{}",guild_name));
                 }
                 if guild_cache.contains_key(&guild_id){
                     let guild = guild_cache.get(&guild_id).unwrap();
@@ -230,6 +243,6 @@ async fn main() {
         data.insert::<GuUs>(Arc::new(RwLock::new(Vec::new())));
     }
     if let Err(why) = client.start_shards(5).await {
-        println!("Steve is hurt!! Call an ambulance stat!! He has {:?}!!",why);
+        errf(&format!("Steve is hurt!! Call an ambulance stat!! He has {:?}!!",why), "None");
     }
 }
