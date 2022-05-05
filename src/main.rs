@@ -7,7 +7,11 @@ use serenity::async_trait;
 use serenity::model::{
     id::GuildId,
     voice::VoiceState, 
-    gateway::Ready
+    gateway::Ready,
+    guild::{
+        Guild,
+        GuildUnavailable
+    }
 };
 use serenity::client::{
     Client,
@@ -121,6 +125,60 @@ impl EventHandler for Handler{
             }
         }
         println!("{} is connected!", ready.user.name);
+    }
+    async fn guild_create(&self, ctx: Context, guild: Guild, _: bool){
+        let data_map = ctx.data.read().await;
+        let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+        let mut user_cache = data_map.get::<Users>().unwrap().write().await;
+        let mut guilduser_cache = data_map.get::<GuUs>().unwrap().write().await;
+        let db = data_map.get::<Database>().unwrap().lock().await;
+        let gid = guild.id.0 as i64;
+        //add guild to db
+        guild_cache.insert(gid,
+            models::Guild::new(&db,
+                gid,Some(guild.name),
+                Some("!".to_string()),
+                Some(guild.owner_id.0 as i64),
+                Some("".to_string())
+            )
+        );
+        for (user, member) in guild.members.to_owned(){
+            let uid = user.0 as i64;
+            if !user_cache.contains_key(&uid){
+                //insert user
+                user_cache.insert(uid,
+                    models::User::new(&db,
+                        uid,
+                        Some(member.user.to_owned().name),
+                        Some(member.user.to_owned().tag()),
+                        Some("".to_string())
+                    )
+                );
+                guilduser_cache.push(models::GuildUser::new(&db,uid,gid));
+            }
+        }
+    }
+    async fn guild_delete(&self, ctx: Context, _: GuildUnavailable, guild: Option<Guild>){
+        let data_map = ctx.data.read().await;
+        let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
+        let mut user_cache = data_map.get::<Users>().unwrap().write().await;
+        let guilduser_cache = data_map.get::<GuUs>().unwrap().write().await;
+        let db = data_map.get::<Database>().unwrap().lock().await;
+        if let Some(g) = guild{
+            let gid = g.id.0 as i64;
+            for guilduser in guilduser_cache.iter(){
+                if guilduser.guild_id == gid{
+                    let uid = guilduser.user_id;
+                    let user = user_cache.get(&uid).unwrap();
+                    user.remove(&db);
+                    user_cache.remove(&uid);
+                }
+            }
+            // delete guild from cache
+            let guild = guild_cache.get(&gid).unwrap();
+            guild.remove(&db);
+            guild_cache.remove(&gid);
+        }
     }
     /**
      * Makes sure the bot exits when everyone else exits

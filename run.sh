@@ -22,4 +22,7 @@ then
 elif [ "$1" == "kill" ]
 then
    kill -9 $(pgrep -f steve)
+elif [ "$1" == "log" ]
+then
+   docker compose logs | grep cloud
 fi

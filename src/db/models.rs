@@ -62,20 +62,20 @@ impl User {
             .expect("Error saving new user");
         n_user
     }
-    pub fn insert(self, conn: MysqlConnection){
+    pub fn insert(self, conn: &MysqlConnection){
         use crate::schema::users::dsl::*;
-        diesel::insert_into(users).values(&self).execute(&conn).expect("Error saving user");
+        diesel::insert_into(users).values(&self).execute(conn).expect("Error saving user");
     }
     pub fn change_channel(&mut self, channel_id: String){
         self.current_channel_id = Some(channel_id);
     }
-    pub fn update(self, conn: MysqlConnection){
+    pub fn update(self, conn: &MysqlConnection){
         use crate::schema::users::dsl::*;
-        diesel::update(users.find(self.id)).set(&self).execute(&conn).expect("Error updating user");
+        diesel::update(users.find(self.id)).set(&self).execute(conn).expect("Error updating user");
     }
-    pub fn remove(self, conn: MysqlConnection){
+    pub fn remove(&self, conn: &MysqlConnection){
         use crate::schema::users::dsl::*;
-        diesel::delete(users.find(self.id)).execute(&conn).expect("Error deleting user");
+        diesel::delete(users.find(self.id)).execute(conn).expect("Error deleting user");
     }
 }
 
@@ -94,9 +94,9 @@ impl Guild {
             .expect("Error saving new guild");
         n_guild
     }
-    pub fn insert(self, conn: MysqlConnection){
+    pub fn insert(self, conn: &MysqlConnection){
         use crate::schema::guilds::dsl::*;
-        diesel::insert_into(guilds).values(&self).execute(&conn).expect("Error saving guild");
+        diesel::insert_into(guilds).values(&self).execute(conn).expect("Error saving guild");
     }
     pub fn set_channel(mut self, channel_id: String){
         self.cur_vc_id = Some(channel_id);
@@ -115,7 +115,7 @@ impl Guild {
         use crate::schema::guilds::dsl::*;
         diesel::update(guilds.find(self.id)).set(&self).execute(conn).expect("Error updating guild");
     }
-    pub fn remove(self, conn: &MysqlConnection){
+    pub fn remove(&self, conn: &MysqlConnection){
         use crate::schema::guilds::dsl::*;
         diesel::delete(guilds.find(self.id)).execute(conn).expect("Error deleting guild");
     }
