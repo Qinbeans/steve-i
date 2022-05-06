@@ -10,8 +10,6 @@ COPY ./diesel.toml ./diesel.toml
 COPY ./migrations ./migrations
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./Cargo.lock ./Cargo.lock
-# copy builds to target
-COPY ./builds ./target
 
 RUN cargo build --release
 
