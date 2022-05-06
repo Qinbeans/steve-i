@@ -6,6 +6,7 @@ services:
     working_dir: /steve
     volumes:
       - .:/steve
+      - ./builds:/steve/target
     depends_on:
       db:
         condition: service_healthy

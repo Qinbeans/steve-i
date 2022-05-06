@@ -8,11 +8,33 @@ use serenity::framework::standard::{
 use serenity::{
     Result as SerenityResult
 };
+
 use serenity::utils::Colour;
 use songbird::input::restartable::Restartable;
 use youtube_dl::{YoutubeDlOutput,YoutubeDl};
+use rspotify::{
+    ClientCredsSpotify,
+    clients::base::BaseClient
+};
+use rspotify_model::{
+    enums::{
+        types::SearchType,
+        country::Country,
+        misc::Market
+    },
+    search::SearchResult,
+};
 use crate::log::{log::logf, error::errf};
-use crate::commands::misc::Guilds;
+use crate::commands::misc::{
+    Guilds,
+    SpotifyClient
+};
+use crate::spotify::{
+    result::{
+        QueryResult,
+        QueryType
+    },
+};
 
 //##############################START##################################
 // Grabbed from:
@@ -915,5 +937,125 @@ pub async fn boom(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     logf("Boom", guild_name);
     check_msg(msg.reply(ctx, "KABOOM!!!").await);
 
+    Ok(())
+}
+
+#[allow(dead_code)]
+async fn parse(tp: &str, query: &str, client: &ClientCredsSpotify) -> Result<QueryResult, String>{
+    //get ClientCredsSpotify from data
+    let res = client.search(query,&SearchType::Playlist,Some(&Market::Country(Country::UnitedStates)),None,Some(5),None).await;
+    match tp{
+        "p" => {
+            let err = format!("No playlists found: {}", query);
+            if let Ok(good_res) = res {
+                match good_res{
+                    SearchResult::Playlists(playlists) => {
+                        let mut result: String = "".to_string();
+                        for pl in playlists.items{
+                            if let Some(name) = pl.owner.display_name{
+                                result += &format!("{} by {}\n",pl.name,name);
+                            }else{
+                                result += &format!("{}\n",pl.name);
+                            }
+                        }
+                        logf(&format!("Results: {}",result), "Playlist");
+                        return Ok(QueryResult {
+                            result,
+                            tp: QueryType::Playlist
+                        });
+                    },
+                    _ => {
+                        errf(&err, "Playlist");
+                        return Err(err);
+                    }
+                }
+            }
+            errf(&err, "Playlist");
+            return Err(err);
+        },
+        "s" => {
+            let err = format!("No Song found: {}", query);
+            if let Ok(good_res) = res {
+                match good_res{
+                    SearchResult::Tracks(song) => {
+                        let mut result: String = "".to_string();
+                        for pl in song.items{
+                            let name = &pl.artists[0].name;
+                            result += &format!("{} by {}\n",pl.name,name);
+                        }
+                        logf(&format!("Results: {}",result), "Song");
+                        return Ok(QueryResult {
+                            result,
+                            tp: QueryType::Song
+                        });
+                    },
+                    _ => {
+                        errf(&err, "Song");
+                        return Err(err);
+                    }
+                }
+            }
+            errf(&err, "Song");
+            return Err(err);
+        },
+        _ => {
+            let err = format!("Invalid query type: {}", tp);
+            errf(&err, "Spotify");
+            return Err(err);
+        }
+    }
+}
+
+#[command]
+#[description("Searches spotify for playlists or songs")]
+#[usage("spotify <p(laylist) | s(ong)> <query>")]
+#[only_in("guilds")]
+pub async fn spotify(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    // split args into query and type
+    let data_map = ctx.data.read().await;
+    let tp = args.single::<String>().unwrap();
+    let query = args.rest();
+    let client = data_map.get::<SpotifyClient>().unwrap().lock().await;
+    let resp = parse(&tp, &query, &client).await;
+    if let Ok(res) = resp {
+        match res.tp {
+            QueryType::Playlist => {
+                check_msg(msg.channel_id.send_message(&ctx.http,|m|{
+                    m.tts(false);
+                    m.embed(|e| {
+                        e.title(format!("Playlists for \"{}\" found: ",query));
+                        e.description(res.result);
+                        e.color(Colour::MEIBE_PINK);
+                        e
+                    });
+    
+                    m
+                }).await);
+            },
+            QueryType::Song => {
+                check_msg(msg.channel_id.send_message(&ctx.http,|m|{
+                    m.tts(false);
+                    m.embed(|e| {
+                        e.title(format!("Songs for \"{}\" found: ",query));
+                        e.description(res.result);
+                        e.color(Colour::MAGENTA);
+                        e
+                    });
+    
+                    m
+                }).await);
+            }
+        }
+    }else if let Err(er) = resp {
+        check_msg(msg.channel_id.send_message(&ctx.http,|m|{
+            m.tts(false);
+            m.embed(|e| {
+                e.title(format!("Error: {}",er));
+                e.color(Colour::RED);
+                e
+            });
+            m
+        }).await);
+    }
     Ok(())
 }

@@ -26,6 +26,7 @@ use std::collections::{
 use futures::lock::Mutex;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use rspotify::ClientCredsSpotify;
 use crate::db::models;
 
 pub struct Database;
@@ -50,6 +51,12 @@ pub struct GuUs;
 
 impl TypeMapKey for GuUs {
     type Value = Arc<RwLock<Vec<models::GuildUser>>>;
+}
+
+pub struct SpotifyClient;
+
+impl TypeMapKey for SpotifyClient {
+    type Value = Arc<Mutex<ClientCredsSpotify>>;
 }
 
 const VALID_PFX: [&'static str; 17] = ["~","+","-","=","$","#","@","/","\\","?",">","*","&","^","%","|","!"];

@@ -25,7 +25,7 @@ use serenity::framework::standard::{
 };
 use dotenv::dotenv;
 use songbird::SerenityInit;
-
+use rspotify::{ClientCredsSpotify, Credentials};
 //future mutex
 use futures::lock::Mutex;
 use std::sync::Arc;
@@ -45,8 +45,10 @@ mod commands;
 use log::{log::logf, error::errf};
 mod log;
 
+mod spotify;
+
 #[group]
-#[commands(prefix,steve, deafen, join, leave, mute, play, undeafen, unmute, skip, pause, stop, resume, list, p, boom)]
+#[commands(prefix,steve, deafen, join, leave, mute, play, undeafen, unmute, skip, pause, stop, resume, list, p, boom, spotify)]
 struct General;
 
 struct Handler;
@@ -62,7 +64,7 @@ impl EventHandler for Handler{
                     other => panic!("{:?}", other)
                 }
             ).collect::<Vec<GuildId>>();
-        println!("{} guilds cached", guilds.len());
+        logf(&format!("{} guilds cached", guilds.len()), "Steve");
         let data_map = ctx.data.read().await;
         let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
         let mut user_cache = data_map.get::<Users>().unwrap().write().await;
@@ -73,7 +75,9 @@ impl EventHandler for Handler{
             user_cache.insert(user.id,user);
         }
         for guild in models::get_guilds(&db){
-            guild_cache.insert(guild.id,guild);
+            if !guild_cache.contains_key(&guild.id){
+                guild_cache.insert(guild.id,guild);
+            }
         }
         for guilduser in models::get_guildusers(&db){
             guilduser_cache.push(guilduser);
@@ -84,12 +88,12 @@ impl EventHandler for Handler{
             if let Some(guild) = raw_guild.to_guild_cached(&ctx).await{
                 let mut owner: serenity::model::user::User;
                 let oid = guild.owner_id.0 as i64;
-                println!("{}",guild.name);
+                logf(&format!("{}",guild.name), &format!("{}",guild.id));
                 for (user_id,member) in guild.members.to_owned(){
                     let uid = user_id.0 as i64;
                     if uid == oid{
                         owner = member.user.clone();
-                        println!("{} is the owner", owner.name);
+                        logf(&format!("{} is the owner", owner.name), &format!("{}",guild.id));
                     }
                     if !user_cache.contains_key(&uid){
                         //insert user
@@ -124,7 +128,7 @@ impl EventHandler for Handler{
                 }
             }
         }
-        println!("{} is connected!", ready.user.name);
+        logf(&format!("{} is connected!", ready.user.name), "Steve");
     }
     async fn guild_create(&self, ctx: Context, guild: Guild, _: bool){
         let data_map = ctx.data.read().await;
@@ -134,14 +138,17 @@ impl EventHandler for Handler{
         let db = data_map.get::<Database>().unwrap().lock().await;
         let gid = guild.id.0 as i64;
         //add guild to db
-        guild_cache.insert(gid,
-            models::Guild::new(&db,
-                gid,Some(guild.name),
-                Some("!".to_string()),
-                Some(guild.owner_id.0 as i64),
-                Some("".to_string())
-            )
-        );
+        logf(&format!("Added/Created {}",guild.name), &format!("{}",guild.id));
+        if guild_cache.contains_key(&gid){
+            guild_cache.insert(gid,
+                models::Guild::new(&db,
+                    gid,Some(guild.name),
+                    Some("!".to_string()),
+                    Some(guild.owner_id.0 as i64),
+                    Some("".to_string())
+                )
+            );
+        }
         for (user, member) in guild.members.to_owned(){
             let uid = user.0 as i64;
             if !user_cache.contains_key(&uid){
@@ -166,6 +173,7 @@ impl EventHandler for Handler{
         let db = data_map.get::<Database>().unwrap().lock().await;
         if let Some(g) = guild{
             let gid = g.id.0 as i64;
+            logf(&format!("Deleted {}",g.name), &format!("{}",g.id));
             for guilduser in guilduser_cache.iter(){
                 if guilduser.guild_id == gid{
                     let uid = guilduser.user_id;
@@ -175,6 +183,7 @@ impl EventHandler for Handler{
                 }
             }
             // delete guild from cache
+            logf(&format!("Not a guild: {}",g.name), &format!("{}",g.id));
             let guild = guild_cache.get(&gid).unwrap();
             guild.remove(&db);
             guild_cache.remove(&gid);
@@ -275,6 +284,7 @@ async fn main() {
                     let guild = guild_cache.get(&guild_id).unwrap();
                     let g_pfx = guild.prefix.as_ref().unwrap();//circumvent move
                     if guild.prefix.is_some(){
+                        logf(&format!("prefix is {}...", g_pfx), guild_name);
                         return Some(g_pfx.to_string());
                     }
                 }
@@ -295,12 +305,28 @@ async fn main() {
     {
         let mut data = client.data.write().await;
         let conn = init::establish_connection();
-        data.insert::<Database>(Arc::new(Mutex::new(conn)));
-        data.insert::<Users>(Arc::new(RwLock::new(HashMap::default())));
-        data.insert::<Guilds>(Arc::new(RwLock::new(HashMap::default())));
-        data.insert::<GuUs>(Arc::new(RwLock::new(Vec::new())));
+        logf("Connecting to Spotify...", "Spotify");
+        let creds_raw = Credentials::from_env();
+        if let Some(creds) = creds_raw{
+            let mut s_client = ClientCredsSpotify::new(creds);
+            let res = s_client.request_token().await;
+            if let Ok(_) = res{
+                logf("Connected to Spotify!", "Spotify");
+                data.insert::<Database>(Arc::new(Mutex::new(conn)));
+                data.insert::<Users>(Arc::new(RwLock::new(HashMap::default())));
+                data.insert::<Guilds>(Arc::new(RwLock::new(HashMap::default())));
+                data.insert::<GuUs>(Arc::new(RwLock::new(Vec::new())));
+                data.insert::<SpotifyClient>(Arc::new(Mutex::new(s_client)));
+            }else{
+                errf("No token received!", "Spotify");
+                return;
+            }
+        }else{
+            errf("No credentials found!", "Spotify");
+            return;
+        }
     }
     if let Err(why) = client.start_shards(5).await {
-        errf(&format!("Steve is hurt!! Call an ambulance stat!! He has {:?}!!",why), "None");
+        errf(&format!("Steve is hurt!! Call an ambulance stat!! He has {:?}!!",why), "Steve");
     }
 }
