@@ -12,18 +12,7 @@ use serenity::{
 use serenity::utils::Colour;
 use songbird::input::restartable::Restartable;
 use youtube_dl::{YoutubeDlOutput,YoutubeDl};
-use rspotify::{
-    ClientCredsSpotify,
-    clients::base::BaseClient
-};
-use rspotify_model::{
-    enums::{
-        types::SearchType,
-        country::Country,
-        misc::Market
-    },
-    search::SearchResult,
-};
+use rspotify::ClientCredsSpotify;
 use crate::log::{log::logf, error::errf};
 use crate::commands::misc::{
     Guilds,
@@ -32,7 +21,9 @@ use crate::commands::misc::{
 use crate::spotify::{
     result::{
         QueryResult,
-        QueryType
+        QueryType,
+        get_playlist,
+        get_song
     },
 };
 
@@ -943,60 +934,12 @@ pub async fn boom(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
 #[allow(dead_code)]
 async fn parse(tp: &str, query: &str, client: &ClientCredsSpotify) -> Result<QueryResult, String>{
     //get ClientCredsSpotify from data
-    let res = client.search(query,&SearchType::Playlist,Some(&Market::Country(Country::UnitedStates)),None,Some(5),None).await;
     match tp{
         "p" => {
-            let err = format!("No playlists found: {}", query);
-            if let Ok(good_res) = res {
-                match good_res{
-                    SearchResult::Playlists(playlists) => {
-                        let mut result: String = "".to_string();
-                        for pl in playlists.items{
-                            if let Some(name) = pl.owner.display_name{
-                                result += &format!("{} by {}\n",pl.name,name);
-                            }else{
-                                result += &format!("{}\n",pl.name);
-                            }
-                        }
-                        logf(&format!("Results: {}",result), "Playlist");
-                        return Ok(QueryResult {
-                            result,
-                            tp: QueryType::Playlist
-                        });
-                    },
-                    _ => {
-                        errf(&err, "Playlist");
-                        return Err(err);
-                    }
-                }
-            }
-            errf(&err, "Playlist");
-            return Err(err);
+            get_playlist(&query.to_owned(), &client.to_owned(), true).await
         },
         "s" => {
-            let err = format!("No Song found: {}", query);
-            if let Ok(good_res) = res {
-                match good_res{
-                    SearchResult::Tracks(song) => {
-                        let mut result: String = "".to_string();
-                        for pl in song.items{
-                            let name = &pl.artists[0].name;
-                            result += &format!("{} by {}\n",pl.name,name);
-                        }
-                        logf(&format!("Results: {}",result), "Song");
-                        return Ok(QueryResult {
-                            result,
-                            tp: QueryType::Song
-                        });
-                    },
-                    _ => {
-                        errf(&err, "Song");
-                        return Err(err);
-                    }
-                }
-            }
-            errf(&err, "Song");
-            return Err(err);
+            get_song(&query.to_owned(), &client.to_owned(), true).await
         },
         _ => {
             let err = format!("Invalid query type: {}", tp);

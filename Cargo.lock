@@ -37,6 +37,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-recursion"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cda8f4bcc10624c4e85bc66b3f452cca98cfa5ca002dc83a16aad2367641bea"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "async-stream"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2177,12 +2188,14 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 name = "steve"
 version = "0.1.0"
 dependencies = [
+ "async-recursion",
  "chrono",
  "diesel",
  "dotenv",
  "futures",
  "reqwest",
  "rspotify",
+ "rspotify-http",
  "rspotify-model",
  "scraper",
  "serenity",

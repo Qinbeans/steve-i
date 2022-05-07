@@ -16,6 +16,8 @@ reqwest = { version = "0.11", features = ["blocking", "cookies"] }
 scraper = "0.12.0"
 rspotify = { version = "0.11.5", features = ["env-file","client-reqwest"] }
 rspotify-model = { version = "0.11.5" }
+rspotify-http = { version = "0.11.5" }
+async-recursion = "1.0.0"
 [dependencies.songbird]
 default-features = true
 features = [
