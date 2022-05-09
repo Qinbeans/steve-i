@@ -14,11 +14,12 @@ pub struct User {
 #[derive(Queryable,Insertable,AsChangeset)]
 #[table_name="guilds"]
 pub struct Guild {
-      pub id: i64,
-      pub name: Option<String>,
-      pub prefix: Option<String>,
-      pub owner_id: Option<i64>,
-      pub cur_vc_id: Option<String>,
+    pub id: i64,
+    pub name: Option<String>,
+    pub prefix: Option<String>,
+    pub owner_id: Option<i64>,
+    pub cur_vc_id: Option<String>,
+    query_results: Option<String>,
 }
 
 #[derive(Queryable,Insertable,AsChangeset)]
@@ -66,8 +67,9 @@ impl User {
         use crate::schema::users::dsl::*;
         diesel::insert_into(users).values(&self).execute(conn).expect("Error saving user");
     }
-    pub fn change_channel(&mut self, channel_id: String){
+    pub fn change_channel(&mut self, channel_id: String) -> &User{
         self.current_channel_id = Some(channel_id);
+        self
     }
     pub fn update(self, conn: &MysqlConnection){
         use crate::schema::users::dsl::*;
@@ -87,6 +89,7 @@ impl Guild {
             prefix,
             owner_id,
             cur_vc_id,
+            query_results: None,
         };
         diesel::insert_into(guilds::table)
             .values(&n_guild)
@@ -98,18 +101,28 @@ impl Guild {
         use crate::schema::guilds::dsl::*;
         diesel::insert_into(guilds).values(&self).execute(conn).expect("Error saving guild");
     }
-    pub fn set_channel(mut self, channel_id: String){
+    pub fn set_channel(&mut self, channel_id: String) -> &Guild {
         self.cur_vc_id = Some(channel_id);
+        self
     }
-    pub fn set_name(mut self, name: String){
+    //return self
+    pub fn set_name(&mut self, name: String) -> &Guild {
         self.name = Some(name);
+        self
     }
-    pub fn set_prefix(mut self, conn: &MysqlConnection, prefix: String){
+    pub fn get_name(&self) -> &str {
+        match &self.name {
+            Some(n) => n,
+            None => "",
+        }
+    }
+    pub fn set_prefix(mut self, conn: &MysqlConnection, prefix: String) -> Guild {
         self.prefix = Some(prefix);
         {
             use crate::schema::guilds::dsl::*;
             diesel::update(guilds.find(self.id)).set(&self).execute(conn).expect("Error updating guild");
         }
+        self
     }
     pub fn update(self, conn: &MysqlConnection){
         use crate::schema::guilds::dsl::*;
@@ -118,6 +131,32 @@ impl Guild {
     pub fn remove(&self, conn: &MysqlConnection){
         use crate::schema::guilds::dsl::*;
         diesel::delete(guilds.find(self.id)).execute(conn).expect("Error deleting guild");
+    }
+    pub fn set_query_results(&mut self, query_results: &Option<Vec<String>>) -> &Guild {
+        if let Some(q) = query_results {
+            self.query_results = Some(q.join("\n"));
+        } else {
+            self.query_results = None;
+        }
+        self
+    }
+    pub fn get_query_results(&self) -> Option<Vec<String>> {
+        // delimiter is \n
+        match self.query_results {
+            Some(ref q) => {
+                let mut results = Vec::new();
+                let mut split = q.split("\n");
+                while let Some(r) = split.next() {
+                    results.push(r.to_string());
+                }
+                Some(results)
+            },
+            None => None,
+        }
+    }
+    pub fn empty_query_results(&mut self) -> &Guild {
+        self.query_results = None;
+        self
     }
 }
 

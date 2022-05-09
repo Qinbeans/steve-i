@@ -11,9 +11,9 @@ use serenity::{
 
 use serenity::utils::Colour;
 use songbird::input::restartable::Restartable;
-use youtube_dl::{YoutubeDlOutput,YoutubeDl};
+use youtube_dl::{YoutubeDlOutput,YoutubeDl,SearchOptions};
 use rspotify::ClientCredsSpotify;
-use crate::log::{log::logf, error::errf};
+use crate::log::{log::logf, log::dbgf, error::errf};
 use crate::commands::misc::{
     Guilds,
     SpotifyClient
@@ -26,6 +26,8 @@ use crate::spotify::{
         get_song
     },
 };
+
+const MAX_QUERY: usize = 5;
 
 //##############################START##################################
 // Grabbed from:
@@ -203,21 +205,21 @@ pub async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[description("I'll play some songs for you")]
 #[usage("p(lay) <song url|playlist url>")]
+#[aliases("p")]
 #[only_in("guilds")]
 pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut guild_name = "None";
+    let mut guild_name = "None".to_string();
     let url = match args.single::<String>() {
         Ok(url) => url,
         Err(_) => {
-            errf("No url provided", guild_name);
+            errf("No url provided", &guild_name);
             check_msg(msg.channel_id.say(&ctx.http, "Must provide a URL to a video or audio").await);
 
             return Ok(());
         },
     };
 
-    let mut searchable: bool = false;
-
+    let mut searchable = false;
     if !url.starts_with("http") {
         searchable = true;
     }
@@ -227,12 +229,13 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
+    let mut queries: Option<Vec<String>> = None;
     if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
-        if let Some(g_name) = c_guild.name.as_ref() {
-            guild_name = g_name;
-        }
+        //copy name of guild
+        guild_name = c_guild.get_name().to_string();
+        queries = c_guild.get_query_results();
+        c_guild.empty_query_results();
     }
-
     let channel_id = guild
         .voice_states.get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
@@ -240,7 +243,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            errf("Not in a voice channel", guild_name);
+            errf("Not in a voice channel", &guild_name);
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
@@ -252,19 +255,86 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     let _handler = manager.join(guild_id, connect_to).await;
 
+    let mut err: String;
+
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         if searchable{
-            let source = match Restartable::ytdl_search(url, true).await {
-                Ok(source) => source,
-                Err(e) => {
-                    errf(&format!("Err not searchable {:?}", e), guild_name);
-                    check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                    return Ok(());
-                },
-            };
-            handler.enqueue_source(source.into());
+            // check if there are already searches in guild
+            if let Some(urls) = queries {
+                //url needs to be a number
+                if let Ok(num) = url.parse::<i64>() {
+                    //check if the number is in the queries
+                    if urls.len() > num as usize {
+                        let query = urls[num as usize].to_string();
+                        //play youtube video
+                        let source = match Restartable::ytdl(query,true).await{
+                            Ok(source) => source,
+                            Err(e) => {
+                                err = format!("Failed: {}",e);
+                                errf(&err, &guild_name);
+                                check_msg(msg.channel_id.say(&ctx.http, err).await);
+                                return Ok(());
+                            }
+                        };
+                        handler.enqueue_source(source.into());
+                    }
+                    err = format!("Not in query results: {}",url);
+                    errf(&err, &guild_name);
+                    check_msg(msg.channel_id.say(&ctx.http, err).await);
+                }
+                err = format!("Not a number: {}",url);
+                errf(&err, &guild_name);
+                check_msg(msg.channel_id.say(&ctx.http, err).await);
+            }else{
+                //search option
+                let search = SearchOptions::youtube(&url).with_count(MAX_QUERY);
+                let output = YoutubeDl::search_for(&search).run();
+                if let Ok(results_raw) = output {
+                    let results: Option<Vec<String>> = match results_raw {
+                        YoutubeDlOutput::Playlist(pl_ref) => {
+                            //deref pl
+                            let pl = *pl_ref;
+                            if let Some(items) = pl.entries {
+                                //vector of songs need to become vector of strings
+                                let mut urls: Vec<String> = Vec::new();
+                                for item in items {
+                                    if let Some(url) = item.webpage_url{
+                                        //copy url from String to &str
+                                        urls.push(url);
+                                    }else{
+                                        err = format!("No url found for: {}",item.title);
+                                        errf(&err, &guild_name);
+                                    }
+                                }
+                                Some(urls)
+                            }else{
+                                None
+                            }
+                        }
+                        _ => None
+                    };
+                    let mut joined: String = "".to_string();
+                    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
+                        c_guild.set_query_results(&results);
+                    } 
+                    if let Some(q) = results {
+                        for (i,url) in q.iter().enumerate() {
+                            joined = format!("{}: {}\n",i,url);
+                        }
+                    } else {
+                        err = format!("No results found for: {}",&url);
+                        errf(&err, &guild_name);
+                        return Ok(());
+                    }
+                    let dbg = format!("DEBUG\n{}",joined);
+                    dbgf(&dbg, &guild_name);
+                    check_msg(msg.channel_id.say(&ctx.http, joined).await);
+                }else if let Err(e) = output {
+                    err = format!("Failed: {}",e);
+                    errf(&err, &guild_name);
+                }
+            }
         }else{
             if url.contains("youtube") && url.contains("playlist"){
                 let output = YoutubeDl::new(&url)
@@ -279,7 +349,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                                 let source = match Restartable::ytdl(entry.url.unwrap(), true).await {
                                     Ok(source) => source,
                                     Err(e) => {
-                                        errf(&format!("Err not searchable {:?}", e), guild_name);
+                                        errf(&format!("Err not searchable {:?}", e), &guild_name);
 
                                         check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
@@ -290,7 +360,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                             }                            
                         }
                         YoutubeDlOutput::SingleVideo(yt_vid) => {
-                            errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), guild_name);
+                            errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), &guild_name);
                             check_msg(msg.channel_id.say(&ctx.http, "Uh oh dead end").await);
                         }
                     }
@@ -299,7 +369,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 let source = match Restartable::ytdl(url, true).await {
                     Ok(source) => source,
                     Err(e) => {
-                        errf(&format!("Err invlaid link {:?}", e), guild_name);
+                        errf(&format!("Err invlaid link {:?}", e), &guild_name);
 
                         check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
 
@@ -312,20 +382,20 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         
         if handler.queue().is_empty() {
             if let Err(e) = handler.queue().resume(){
-                errf(&format!("Failed {:?}", e), guild_name);
+                errf(&format!("Failed {:?}", e), &guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
             }else{
-                logf("Playing...", guild_name);
+                logf("Playing...", &guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
             }
         }else{
-            logf("Queued", guild_name);
+            logf("Queued", &guild_name);
             check_msg(msg.channel_id.say(&ctx.http, "Queued").await);
         }
         //make anew
     } else {
         //make anew
-        errf("Not in a voice channel to play in", guild_name);
+        errf("Not in a voice channel to play in", &guild_name);
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
     }
 
@@ -759,138 +829,6 @@ pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
             m
         }).await);
     }
-    Ok(())
-}
-
-#[command]
-#[description("I'll play some songs for you")]
-#[usage("p(lay) <song url|playlist url>")]
-#[only_in("guilds")]
-pub async fn p(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let mut guild_name = "None";
-    let url = match args.single::<String>() {
-        Ok(url) => url,
-        Err(_) => {
-            errf("No url provided", guild_name);
-            check_msg(msg.channel_id.say(&ctx.http, "Must provide a URL to a video or audio").await);
-
-            return Ok(());
-        },
-    };
-
-    let mut searchable: bool = false;
-
-    if !url.starts_with("http") {
-        searchable = true;
-    }
-
-    let data_map = ctx.data.read().await;
-    let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
-
-    let guild = msg.guild(&ctx.cache).await.unwrap();
-    let guild_id = guild.id;
-    if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
-        if let Some(g_name) = c_guild.name.as_ref() {
-            guild_name = g_name;
-        }
-    }
-
-    let channel_id = guild
-        .voice_states.get(&msg.author.id)
-        .and_then(|voice_state| voice_state.channel_id);
-    
-    let connect_to = match channel_id {
-        Some(channel) => channel,
-        None => {
-            errf("Not in a voice channel", guild_name);
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
-
-            return Ok(());
-        }
-    };
-
-    let manager = songbird::get(ctx).await
-        .expect("Songbird Voice client placed in at initialisation.").clone();
-
-    let _handler = manager.join(guild_id, connect_to).await;
-
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-        if searchable{
-            let source = match Restartable::ytdl_search(url, true).await {
-                Ok(source) => source,
-                Err(e) => {
-                    errf(&format!("Err not searchable {:?}", e), guild_name);
-                    check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                    return Ok(());
-                },
-            };
-            handler.enqueue_source(source.into());
-        }else{
-            if url.contains("youtube") && url.contains("playlist"){
-                let output = YoutubeDl::new(&url)
-                            .flat_playlist(true)
-                            .socket_timeout("5")
-                            .run();
-                if let Ok(yt) = output {
-                    match yt {
-                        YoutubeDlOutput::Playlist(yt_pl) => {
-                            let entries = yt_pl.entries.unwrap_or(vec![]);
-                            for entry in entries {
-                                let source = match Restartable::ytdl(entry.url.unwrap(), true).await {
-                                    Ok(source) => source,
-                                    Err(e) => {
-                                        errf(&format!("Err not searchable {:?}", e), guild_name);
-
-                                        check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                                        return Ok(());
-                                    },
-                                };
-                                handler.enqueue_source(source.into());
-                            }                            
-                        }
-                        YoutubeDlOutput::SingleVideo(yt_vid) => {
-                            errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), guild_name);
-                            check_msg(msg.channel_id.say(&ctx.http, "Uh oh dead end").await);
-                        }
-                    }
-                }
-            }else{
-                let source = match Restartable::ytdl(url, true).await {
-                    Ok(source) => source,
-                    Err(e) => {
-                        errf(&format!("Err invlaid link {:?}", e), guild_name);
-
-                        check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                        return Ok(());
-                    },
-                };
-                handler.enqueue_source(source.into());
-            }
-        }
-        
-        if handler.queue().is_empty() {
-            if let Err(e) = handler.queue().resume(){
-                errf(&format!("Failed {:?}", e), guild_name);
-                check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
-            }else{
-                logf("Playing...", guild_name);
-                check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
-            }
-        }else{
-            logf("Queued", guild_name);
-            check_msg(msg.channel_id.say(&ctx.http, "Queued").await);
-        }
-        //make anew
-    } else {
-        //make anew
-        errf("Not in a voice channel to play in", guild_name);
-        check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
-    }
-
     Ok(())
 }
 

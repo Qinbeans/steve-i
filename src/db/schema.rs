@@ -5,6 +5,7 @@ table! {
         prefix -> Nullable<Varchar>,
         owner_id -> Nullable<Bigint>,
         cur_vc_id -> Nullable<Varchar>,
+        query_results -> Nullable<Varchar>,
     }
 }
 
