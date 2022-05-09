@@ -1,7 +1,6 @@
 use diesel::mysql::MysqlConnection;
 use diesel::prelude::*;
 use crate::schema::{users, guilds, guild_users};
-use crate::log::log::logf;
 
 #[derive(Queryable,Insertable,AsChangeset)]
 #[table_name="users"]

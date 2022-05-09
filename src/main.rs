@@ -50,7 +50,7 @@ mod log;
 mod spotify;
 
 #[group]
-#[commands(prefix,steve, deafen, join, leave, mute, play, undeafen, unmute, skip, pause, stop, resume, list, boom, spotify)]
+#[commands(prefix,steve, deafen, join, leave, mute, play, undeafen, unmute, skip, pause, stop, resume, list, boom, spotify, status)]
 struct General;
 
 struct Handler;
