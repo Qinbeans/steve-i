@@ -10,8 +10,10 @@ use serenity::model::{
     gateway::Ready,
     guild::{
         Guild,
+        Member,
         GuildUnavailable
-    }
+    },
+    user::User,
 };
 use serenity::client::{
     Client,
@@ -42,7 +44,7 @@ use commands::{
 };
 mod commands;
 
-use log::{log::logf, error::errf};
+use log::{log::{logf,dbgf}, error::errf};
 mod log;
 
 mod spotify;
@@ -64,7 +66,7 @@ impl EventHandler for Handler{
                     other => panic!("{:?}", other)
                 }
             ).collect::<Vec<GuildId>>();
-        logf(&format!("{} guilds cached", guilds.len()), "Steve");
+        dbgf(&format!("{} guilds cached", guilds.len()), "Steve");
         let data_map = ctx.data.read().await;
         let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
         let mut user_cache = data_map.get::<Users>().unwrap().write().await;
@@ -88,12 +90,12 @@ impl EventHandler for Handler{
             if let Some(guild) = raw_guild.to_guild_cached(&ctx).await{
                 let mut owner: serenity::model::user::User;
                 let oid = guild.owner_id.0 as i64;
-                logf(&format!("{}",guild.name), &format!("{}",guild.id));
+                dbgf(&format!("{}",guild.name), &format!("{}",guild.id));
                 for (user_id,member) in guild.members.to_owned(){
                     let uid = user_id.0 as i64;
                     if uid == oid{
                         owner = member.user.clone();
-                        logf(&format!("{} is the owner", owner.name), &format!("{}",guild.id));
+                        dbgf(&format!("{} is the owner", owner.name), &format!("{}",guild.id));
                     }
                     if !user_cache.contains_key(&uid){
                         //insert user
@@ -138,17 +140,33 @@ impl EventHandler for Handler{
         let db = data_map.get::<Database>().unwrap().lock().await;
         let gid = guild.id.0 as i64;
         //add guild to db
-        logf(&format!("Added/Created {}",guild.name), &format!("{}",guild.id));
-        if guild_cache.contains_key(&gid){
+        //if guild_cache does not contain guild
+        if !guild_cache.contains_key(&gid){
+            //find owner id
+            let oid_obj = guild.owner_id;
+            if let Some(owner) = guild.members.get(&oid_obj){
+                let oid = oid_obj.0 as i64;
+                //insert owner into cache
+                dbgf(&format!("Owner: {}",owner.user.name), &format!("{}",guild.id));
+                user_cache.insert(oid,
+                    models::User::new(&db,
+                        oid,
+                        Some(owner.user.to_owned().name),
+                        Some(owner.user.to_owned().tag()),
+                        Some("".to_string())
+                    )
+                );
+            }
             guild_cache.insert(gid,
                 models::Guild::new(&db,
-                    gid,Some(guild.name),
+                    gid,Some(guild.name.to_owned()),
                     Some("!".to_string()),
                     Some(guild.owner_id.0 as i64),
                     Some("".to_string())
                 )
             );
         }
+        dbgf(&format!("Added/Created {}",guild.name), &format!("{}",guild.id));
         for (user, member) in guild.members.to_owned(){
             let uid = user.0 as i64;
             if !user_cache.contains_key(&uid){
@@ -187,6 +205,43 @@ impl EventHandler for Handler{
             let guild = guild_cache.get(&gid).unwrap();
             guild.remove(&db);
             guild_cache.remove(&gid);
+        }
+    }
+    async fn guild_member_addition(&self, ctx: Context, guild_id: GuildId, new_member: Member) {
+        let data_map = ctx.data.read().await;
+        let mut user_cache = data_map.get::<Users>().unwrap().write().await;
+        let mut guilduser_cache = data_map.get::<GuUs>().unwrap().write().await;
+        let db = data_map.get::<Database>().unwrap().lock().await;
+        let gid = guild_id.0 as i64;
+        let uid = new_member.user.id.0 as i64;
+        //insert user
+        user_cache.insert(uid,
+            models::User::new(&db,
+                uid,
+                Some(new_member.user.to_owned().name),
+                Some(new_member.user.to_owned().tag()),
+                Some("".to_string())
+            )
+        );
+        //insert guilduser
+        guilduser_cache.push(models::GuildUser::new(&db,uid,gid));
+    }
+    async fn guild_member_removal(&self, ctx: Context, guild_id: GuildId, user: User, _: Option<Member>) {
+        let data_map = ctx.data.read().await;
+        let mut user_cache = data_map.get::<Users>().unwrap().write().await;
+        let mut guilduser_cache = data_map.get::<GuUs>().unwrap().write().await;
+        let db = data_map.get::<Database>().unwrap().lock().await;
+        let gid = guild_id.0 as i64;
+        let uid = user.id.0 as i64;
+        //remove guil(duser
+        for i in 0..guilduser_cache.len(){
+            if guilduser_cache[i].guild_id == gid && guilduser_cache[i].user_id == uid{
+                guilduser_cache.remove(i);
+                if let Some(user_db) = user_cache.get(&uid){
+                    user_db.remove(&db);
+                }
+                user_cache.remove(&uid);
+            }
         }
     }
     /**
@@ -317,6 +372,7 @@ async fn main() {
                 data.insert::<Guilds>(Arc::new(RwLock::new(HashMap::default())));
                 data.insert::<GuUs>(Arc::new(RwLock::new(Vec::new())));
                 data.insert::<SpotifyClient>(Arc::new(Mutex::new(s_client)));
+                data.insert::<Query>(Arc::new(RwLock::new(HashMap::default())));
             }else{
                 errf("No token received!", "Spotify");
                 return;

@@ -8,7 +8,7 @@ use serenity::framework::standard::{
 use serenity::{
     Result as SerenityResult
 };
-
+use chrono::Utc;
 use serenity::utils::Colour;
 use songbird::input::restartable::Restartable;
 use youtube_dl::{YoutubeDlOutput,YoutubeDl,SearchOptions};
@@ -16,7 +16,9 @@ use rspotify::ClientCredsSpotify;
 use crate::log::{log::logf, log::dbgf, error::errf};
 use crate::commands::misc::{
     Guilds,
-    SpotifyClient
+    SpotifyClient,
+    Query,
+    Database
 };
 use crate::spotify::{
     result::{
@@ -219,23 +221,40 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         },
     };
 
-    let mut searchable = false;
-    if !url.starts_with("http") {
-        searchable = true;
-    }
-
     let data_map = ctx.data.read().await;
     let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
-
+    let mut query_cache = data_map.get::<Query>().unwrap().write().await;
+    let db = data_map.get::<Database>().unwrap().lock().await;
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
+    let gid = i64::from(guild_id);
     let mut queries: Option<Vec<String>> = None;
     if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
         //copy name of guild
         guild_name = c_guild.get_name().to_string();
         queries = c_guild.get_query_results();
-        c_guild.empty_query_results();
+        c_guild.empty_query_results().update(&db);
+        if query_cache.contains_key(&gid) {
+            if let Some(q) = query_cache.get(&i64::from(guild_id)) {
+                //if the difference between time is 5 min or more, wipe it and return
+                let now = Utc::now();
+                let diff = now.signed_duration_since(*q);
+                if diff.num_minutes() >= MAX_QUERY as i64 {
+                    query_cache.remove(&gid);
+                    c_guild.empty_query_results().update(&db);
+                    logf("Query cache wiped", &guild_name);
+                    check_msg(msg.channel_id.say(&ctx.http, "Took to long to respond.  Try again!").await);
+                    return Ok(());
+                }
+            }
+        }
     }
+
+    let mut searchable = false;
+    if !url.starts_with("http") {
+        searchable = true;
+    }
+    
     let channel_id = guild
         .voice_states.get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
@@ -265,8 +284,8 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                 //url needs to be a number
                 if let Ok(num) = url.parse::<i64>() {
                     //check if the number is in the queries
-                    if urls.len() > num as usize {
-                        let query = urls[num as usize].to_string();
+                    if urls.len() + 1 > num as usize {
+                        let query = urls[(num - 1) as usize].to_string();
                         //play youtube video
                         let source = match Restartable::ytdl(query,true).await{
                             Ok(source) => source,
@@ -279,26 +298,24 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                         };
                         handler.enqueue_source(source.into());
                     }
-                    err = format!("Not in query results: {}",url);
-                    errf(&err, &guild_name);
-                    check_msg(msg.channel_id.say(&ctx.http, err).await);
+                    errf(&format!("Out of range: {}", url), &guild_name);
                 }
-                err = format!("Not a number: {}",url);
-                errf(&err, &guild_name);
-                check_msg(msg.channel_id.say(&ctx.http, err).await);
+                errf(&format!("Not a number: {}", url), &guild_name);
             }else{
                 //search option
                 let search = SearchOptions::youtube(&url).with_count(MAX_QUERY);
                 let output = YoutubeDl::search_for(&search).run();
                 if let Ok(results_raw) = output {
-                    let results: Option<Vec<String>> = match results_raw {
+                    let results: (Option<Vec<String>>,Option<Vec<String>>) = match results_raw {
                         YoutubeDlOutput::Playlist(pl_ref) => {
                             //deref pl
                             let pl = *pl_ref;
                             if let Some(items) = pl.entries {
                                 //vector of songs need to become vector of strings
                                 let mut urls: Vec<String> = Vec::new();
+                                let mut values: Vec<String> = Vec::new();
                                 for item in items {
+                                    values.push(item.title.to_owned());
                                     if let Some(url) = item.webpage_url{
                                         //copy url from String to &str
                                         urls.push(url);
@@ -307,20 +324,20 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                                         errf(&err, &guild_name);
                                     }
                                 }
-                                Some(urls)
+                                (Some(urls),Some(values))
                             }else{
-                                None
+                                (None, None)
                             }
                         }
-                        _ => None
+                        _ => (None, None)
                     };
                     let mut joined: String = "".to_string();
                     if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
-                        c_guild.set_query_results(&results);
+                        c_guild.set_query_results(&results.0).update(&db);
                     } 
-                    if let Some(q) = results {
+                    if let Some(q) = results.1 {
                         for (i,url) in q.iter().enumerate() {
-                            joined = format!("{}: {}\n",i,url);
+                            joined = format!("{}{}: {}\n",joined,i+1,url);
                         }
                     } else {
                         err = format!("No results found for: {}",&url);
@@ -329,7 +346,14 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
                     }
                     let dbg = format!("DEBUG\n{}",joined);
                     dbgf(&dbg, &guild_name);
-                    check_msg(msg.channel_id.say(&ctx.http, joined).await);
+                    //embed
+                    msg.channel_id.send_message(&ctx.http,|m| {
+                        m.embed(|e| {
+                            e.title("Search results");
+                            e.description(joined);
+                            e.color(Colour::BLITZ_BLUE)
+                        })
+                    }).await?;
                 }else if let Err(e) = output {
                     err = format!("Failed: {}",e);
                     errf(&err, &guild_name);
@@ -384,7 +408,7 @@ pub async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
             if let Err(e) = handler.queue().resume(){
                 errf(&format!("Failed {:?}", e), &guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
-            }else{
+            }else if !searchable{
                 logf("Playing...", &guild_name);
                 check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
             }
@@ -938,5 +962,56 @@ pub async fn spotify(ctx: &Context, msg: &Message, mut args: Args) -> CommandRes
             m
         }).await);
     }
+    Ok(())
+}
+
+#[command]
+#[description("Shows status of current song and place in queue")]
+#[usage("status")]
+#[only_in("guilds")]
+pub async fn status(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
+    let guild_id = msg.guild(&ctx.cache).await.unwrap().id;
+    let err: &str;
+    let manager = songbird::get(ctx).await
+    .expect("Songbird Voice client placed in at initialisation.").clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let handler = handler_lock.lock().await;
+        let curr = handler.queue().current_queue();
+        let metadata = curr[0].metadata();
+        if let Ok(info) = curr[0].get_info().await {
+            let position = info.position;
+            let length = info.play_time;
+            if let Some(title) = &metadata.title {
+                let title = title.to_owned();
+                if let Some(thumbnail) = &metadata.thumbnail {
+                    let thumbnail = thumbnail.to_owned();
+                    let output = format!("{}/{} - {}", position.as_secs_f64()/60.0, length.as_secs_f64()/60.0, title);
+                    dbgf(&output, "Songbird");
+                    check_msg(msg.channel_id.send_message(&ctx.http,|m|{
+                        m.tts(false);
+                        m.embed(|e| {
+                            e.title(output);
+                            e.thumbnail(thumbnail);
+                            e.color(Colour::MAGENTA);
+                            e
+                        });
+                        m
+                    }).await);
+                }
+            }
+            err = "No metadata";
+            errf(&err, "Songbird");
+            check_msg(msg.channel_id.say(&ctx.http,err).await);
+            return Ok(());
+        }
+        err = "Could not get info for track info";
+        errf(err, "Songbird");
+        check_msg(msg.channel_id.say(&ctx.http,err).await);
+        return Ok(());
+    }
+    err = "Could not get handler";
+    errf(err, "Songbird");
+    check_msg(msg.channel_id.say(&ctx.http,err).await);
     Ok(())
 }

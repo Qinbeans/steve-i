@@ -22,6 +22,7 @@ use std::collections::{
     HashMap,
     HashSet
 };
+use chrono::{Utc, DateTime};
 //future mutex
 use futures::lock::Mutex;
 use std::sync::Arc;
@@ -57,6 +58,12 @@ pub struct SpotifyClient;
 
 impl TypeMapKey for SpotifyClient {
     type Value = Arc<Mutex<ClientCredsSpotify>>;
+}
+
+pub struct Query;
+
+impl TypeMapKey for Query {
+    type Value = Arc<RwLock<HashMap<i64,DateTime<Utc>>>>;
 }
 
 const VALID_PFX: [&'static str; 17] = ["~","+","-","=","$","#","@","/","\\","?",">","*","&","^","%","|","!"];

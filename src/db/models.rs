@@ -1,6 +1,7 @@
 use diesel::mysql::MysqlConnection;
 use diesel::prelude::*;
 use crate::schema::{users, guilds, guild_users};
+use crate::log::log::logf;
 
 #[derive(Queryable,Insertable,AsChangeset)]
 #[table_name="users"]
@@ -124,9 +125,9 @@ impl Guild {
         }
         self
     }
-    pub fn update(self, conn: &MysqlConnection){
+    pub fn update(&self, conn: &MysqlConnection){
         use crate::schema::guilds::dsl::*;
-        diesel::update(guilds.find(self.id)).set(&self).execute(conn).expect("Error updating guild");
+        diesel::update(guilds.find(self.id)).set(self).execute(conn).expect("Error updating guild");
     }
     pub fn remove(&self, conn: &MysqlConnection){
         use crate::schema::guilds::dsl::*;
@@ -177,3 +178,4 @@ impl GuildUser {
         diesel::insert_into(guild_users).values(&self).execute(&conn).expect("Error saving guild_user");
     }
 }
+

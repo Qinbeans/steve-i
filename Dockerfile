@@ -7,7 +7,6 @@ WORKDIR /steve
 
 COPY ./src/ ./src/
 COPY ./diesel.toml ./diesel.toml
-COPY ./migrations ./migrations
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./Cargo.lock ./Cargo.lock
 

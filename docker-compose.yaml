@@ -5,7 +5,11 @@ services:
     command: bash -c "diesel setup && echo DIESEL && steve"
     working_dir: /steve
     volumes:
-      - .:/steve
+      - ./builds:/steve/target
+      - ./migrations:/steve/migrations
+      - ./diesel.toml:/steve/diesel.toml
+      - ./Cargo.toml:/steve/Cargo.toml
+      - ./Cargo.lock:/steve/Cargo.lock
     depends_on:
       db:
         condition: service_healthy
@@ -15,6 +19,9 @@ services:
       - PREFIX=${PREFIX}
       - DATABASE_URL=mysql://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - RSPOTIFY_CLIENT_ID=${RSPOTIFY_CLIENT_ID}
+      - RSPOTIFY_CLIENT_SECRET=${RSPOTIFY_CLIENT_SECRET}
+      - RSPOTIFY_REDIRECT_URI=${RSPOTIFY_REDIRECT_URI}
   db:
     image: "mariadb:latest"
     restart: always
