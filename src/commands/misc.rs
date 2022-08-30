@@ -111,7 +111,7 @@ pub async fn steve(ctx: &Context, msg: &Message) -> CommandResult{
 #[owner_privilege(true)]
 pub async fn prefix(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult{
     let data_map = ctx.data.read().await;
-    let db = data_map.get::<Database>().unwrap().lock().await;
+    let db = &mut data_map.get::<Database>().unwrap().lock().await;
     let pfx = args.single::<String>().unwrap_or(format!("+"));
     if !find(pfx.to_owned(),VALID_PFX.to_vec()){
         msg.reply(ctx, "Invalid prefix").await?;
@@ -128,13 +128,13 @@ pub async fn prefix(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         return Ok(());
     }
     let gid = raw_gid.unwrap().0 as i64;
-    let raw_guild = models::get_guild_by_id(&db, gid);
+    let raw_guild = models::get_guild_by_id(db, gid);
     if raw_guild.is_none(){
         msg.reply(ctx, "This command can only be used in a guild").await?;
         return Ok(());
     }
     let guild = raw_guild.unwrap();
-    guild.set_prefix(&db,pfx.to_owned());
+    guild.set_prefix(db,pfx.to_owned());
     msg.channel_id.send_message(&ctx.http,|m| {
         m.embed(|e| {
             e.title("Prefix Changed");

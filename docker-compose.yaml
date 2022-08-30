@@ -2,7 +2,7 @@ version: '3'
 services:
   cloud_server:
     build: .
-    command: bash -c "diesel setup && echo DIESEL && steve"
+    command: bash -c "echo DIESEL && steve"
     working_dir: /steve
     volumes:
       - ./builds:/steve/target
@@ -11,8 +11,7 @@ services:
       - ./Cargo.toml:/steve/Cargo.toml
       - ./Cargo.lock:/steve/Cargo.lock
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     links:
       - db
     environment:
@@ -31,13 +30,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      - MARIADB_ROOT_PASSWORD=${DB_PASS}
+      # - MARIADB_ROOT_PASSWORD=${DB_PASS}
       - MYSQL_DATABASE=${DB_NAME}
       - MYSQL_USER=${DB_USER}
       - MYSQL_PASSWORD=${DB_PASS}
-    healthcheck:
-            test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost","-P", "5432"]
-            timeout: 5s
-            retries: 10
 volumes:
   db:

@@ -1,9 +1,10 @@
 use diesel::mysql::MysqlConnection;
 use diesel::prelude::*;
 use crate::schema::{users, guilds, guild_users};
+use crate::db::init;
 
 #[derive(Queryable,Insertable,AsChangeset)]
-#[table_name="users"]
+#[diesel(table_name = users)]
 pub struct User {
     pub id: i64,
     pub name: Option<String>,
@@ -12,7 +13,7 @@ pub struct User {
 }
 
 #[derive(Queryable,Insertable,AsChangeset)]
-#[table_name="guilds"]
+#[diesel(table_name = guilds)]
 pub struct Guild {
     pub id: i64,
     pub name: Option<String>,
@@ -23,34 +24,34 @@ pub struct Guild {
 }
 
 #[derive(Queryable,Insertable,AsChangeset)]
-#[table_name="guild_users"]
+#[diesel(table_name = guild_users)]
 pub struct GuildUser {
     pub user_id: i64,
     pub guild_id: i64,
 }
 
-pub fn get_users(conn: &MysqlConnection) -> Vec<User> {
+pub fn get_users(conn: &mut MysqlConnection) -> Vec<User> {
     use crate::schema::users::dsl::*;
     users.load::<User>(conn).expect("Error loading users")
 }
 
-pub fn get_guilds(conn: &MysqlConnection) -> Vec<Guild> {
+pub fn get_guilds(conn: &mut MysqlConnection) -> Vec<Guild> {
     use crate::schema::guilds::dsl::*;
     guilds.load::<Guild>(conn).expect("Error loading guilds")
 }
 
-pub fn get_guildusers(conn: &MysqlConnection) -> Vec<GuildUser> {
+pub fn get_guildusers(conn: &mut MysqlConnection) -> Vec<GuildUser> {
     use crate::schema::guild_users::dsl::*;
     guild_users.load::<GuildUser>(conn).expect("Error loading guild_users")
 }
 
-pub fn get_guild_by_id(conn: &MysqlConnection, tid: i64) -> Option<Guild> {
+pub fn get_guild_by_id(conn: &mut MysqlConnection, tid: i64) -> Option<Guild> {
     use crate::schema::guilds::dsl::*;
     guilds.filter(id.eq(tid)).first::<Guild>(conn).ok()
 }
 
 impl User {
-    pub fn new(conn: &MysqlConnection,id: i64, name: Option<String>, tag: Option<String>, current_channel_id: Option<String>) -> User {
+    pub fn new(conn: &mut MysqlConnection,id: i64, name: Option<String>, tag: Option<String>, current_channel_id: Option<String>) -> User {
         let n_user = User {
             id,
             name,
@@ -63,7 +64,7 @@ impl User {
             .expect("Error saving new user");
         n_user
     }
-    pub fn insert(self, conn: &MysqlConnection){
+    pub fn insert(self, conn: &mut MysqlConnection){
         use crate::schema::users::dsl::*;
         diesel::insert_into(users).values(&self).execute(conn).expect("Error saving user");
     }
@@ -71,18 +72,18 @@ impl User {
         self.current_channel_id = Some(channel_id);
         self
     }
-    pub fn update(self, conn: &MysqlConnection){
+    pub fn update(self, conn: &mut MysqlConnection){
         use crate::schema::users::dsl::*;
         diesel::update(users.find(self.id)).set(&self).execute(conn).expect("Error updating user");
     }
-    pub fn remove(&self, conn: &MysqlConnection){
+    pub fn remove(&self, conn: &mut MysqlConnection){
         use crate::schema::users::dsl::*;
         diesel::delete(users.find(self.id)).execute(conn).expect("Error deleting user");
     }
 }
 
 impl Guild {
-    pub fn new(conn: &MysqlConnection, id: i64, name: Option<String>, prefix: Option<String>, owner_id: Option<i64>, cur_vc_id: Option<String>) -> Guild {
+    pub fn new(conn: &mut MysqlConnection, id: i64, name: Option<String>, prefix: Option<String>, owner_id: Option<i64>, cur_vc_id: Option<String>) -> Guild {
         let n_guild = Guild {
             id,
             name,
@@ -97,7 +98,7 @@ impl Guild {
             .expect("Error saving new guild");
         n_guild
     }
-    pub fn insert(self, conn: &MysqlConnection){
+    pub fn insert(self, conn: &mut MysqlConnection){
         use crate::schema::guilds::dsl::*;
         diesel::insert_into(guilds).values(&self).execute(conn).expect("Error saving guild");
     }
@@ -116,7 +117,7 @@ impl Guild {
             None => "",
         }
     }
-    pub fn set_prefix(mut self, conn: &MysqlConnection, prefix: String) -> Guild {
+    pub fn set_prefix(mut self, conn: &mut MysqlConnection, prefix: String) -> Guild {
         self.prefix = Some(prefix);
         {
             use crate::schema::guilds::dsl::*;
@@ -124,11 +125,22 @@ impl Guild {
         }
         self
     }
-    pub fn update(&self, conn: &MysqlConnection){
+    pub fn update(&self, conn: &mut MysqlConnection){
         use crate::schema::guilds::dsl::*;
-        diesel::update(guilds.find(self.id)).set(self).execute(conn).expect("Error updating guild");
+        let res = diesel::update(guilds.find(self.id)).set(self).execute(conn);
+        if res.is_ok() {
+            return;
+        }
+        println!("Error updating guild");
+        let reconn_raw = init::establish_connection(0);
+        if reconn_raw.is_none() {
+            println!("Error reconnecting to database");
+            return;
+        }
+        let reconn = &mut reconn_raw.unwrap();
+        diesel::update(guilds.find(self.id)).set(self).execute(reconn).expect("Error updating guild");
     }
-    pub fn remove(&self, conn: &MysqlConnection){
+    pub fn remove(&self, conn: &mut MysqlConnection){
         use crate::schema::guilds::dsl::*;
         diesel::delete(guilds.find(self.id)).execute(conn).expect("Error deleting guild");
     }
@@ -161,7 +173,7 @@ impl Guild {
 }
 
 impl GuildUser {
-    pub fn new(conn: &MysqlConnection, user_id: i64, guild_id: i64) -> GuildUser {
+    pub fn new(conn: &mut MysqlConnection, user_id: i64, guild_id: i64) -> GuildUser {
         let n_gu = GuildUser {
             user_id,
             guild_id,
@@ -172,9 +184,18 @@ impl GuildUser {
             .expect("Error saving new guild_user");
         n_gu
     }
-    pub fn insert(self, conn: MysqlConnection){
+    pub fn insert(self, conn: &mut MysqlConnection){
         use crate::schema::guild_users::dsl::*;
-        diesel::insert_into(guild_users).values(&self).execute(&conn).expect("Error saving guild_user");
+        diesel::insert_into(guild_users).values(&self).execute(conn).expect("Error saving guild_user");
+    }
+    pub fn is_equal(&self, other: &GuildUser) -> bool {
+        self.user_id == other.user_id && self.guild_id == other.guild_id
+    }
+    pub fn copy(&self) -> GuildUser {
+        GuildUser {
+            user_id: self.user_id,
+            guild_id: self.guild_id,
+        }
     }
 }
 

@@ -24,5 +24,8 @@ then
    kill -9 $(pgrep -f steve)
 elif [ "$1" == "log" ]
 then
-   docker compose logs | grep cloud
+   docker-compose logs | grep cloud
+elif [ "$1" == "db" ]
+then
+   docker-compose logs | grep db
 fi
