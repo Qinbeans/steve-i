@@ -1,4 +1,4 @@
-FROM rust:slim AS builder
+FROM rust:1.63-slim AS builder
 
 RUN apt-get update && apt-get install build-essential default-libmysqlclient-dev autoconf automake libtool \
     m4 libopus-dev libssl-dev pkg-config -y
@@ -9,6 +9,7 @@ COPY ./src/ ./src/
 COPY ./diesel.toml ./diesel.toml
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./Cargo.lock ./Cargo.lock
+COPY ./tmp ./target/release
 
 RUN cargo build --release
 

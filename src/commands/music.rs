@@ -1,9 +1,14 @@
+// #[macro]
 use serenity::builder::{
     CreateActionRow,
-    CreateButton
+    CreateButton,
+    CreateComponents
 };
 use core::time::Duration;
-use serenity::model::channel::Message;
+use serenity::model::{
+    channel::Message,
+    application::component::ButtonStyle
+};
 use serenity::client::Context;
 use serenity::framework::standard::{
     CommandResult,
@@ -13,16 +18,14 @@ use serenity::framework::standard::{
 use serenity::{
     Result as SerenityResult
 };
-use chrono::Utc;
 use serenity::utils::Colour;
 use songbird::input::restartable::Restartable;
 use youtube_dl::{YoutubeDlOutput,YoutubeDl,SearchOptions};
 use rspotify::ClientCredsSpotify;
-use crate::log::{log::logf, log::dbgf, error::errf};
+use crate::log::{log::*, error::errf};
 use crate::commands::misc::{
     Guilds,
     SpotifyClient,
-    Query,
     Database
 };
 use crate::spotify::{
@@ -210,26 +213,30 @@ pub async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-fn create_button(name: String, id: usize) -> CreateButton {
+fn create_button(name:String, id: usize) -> CreateButton {
     //resize the text to fit the button
-    let mut resize: String = name.clone();
-    if resize.len() > MAX_LABEL_LENGTH {
-        resize.truncate(MAX_LABEL_LENGTH);
-        resize += "...";
-    }
     let mut button: CreateButton = CreateButton::default();
-    button.label(resize)
-        .style(serenity::model::application::component::ButtonStyle::Secondary)
+    button.label(name)
+        .style(ButtonStyle::Success)
         .custom_id(id);
     button
 }
 
-fn button_builder(names: &Vec<String>) -> CreateActionRow {
+fn button_builder(names: Vec<String>) -> CreateActionRow {
     let mut row: CreateActionRow = CreateActionRow::default();
-    for (i, name) in names.iter().enumerate() {
-        row.add_button(create_button(name.to_string(), i));
+    for (i,name) in names.iter().enumerate() {
+        logf(&format!("{}:{}/{}",i,name,name.len()), "NONE");
+        let resize = format!("{}...",special_truncate(name));
+        row.add_button(create_button(resize,i));
     }
     row
+}
+
+fn special_truncate(name: &str) -> String {
+    match name.char_indices().nth(MAX_LABEL_LENGTH) {
+        None => name.to_string(),
+        Some((idx, _)) => format!("{}...",&name[..idx]),
+    }
 }
 
 #[command]
@@ -240,40 +247,34 @@ fn button_builder(names: &Vec<String>) -> CreateActionRow {
 pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let mut guild_name = "None".to_string();
     let url = args.rest().to_string();
+    let main_msg_res = msg.channel_id.say(&ctx.http, "Loading...").await;
+    if main_msg_res.as_ref().err().is_some() {
+        errf("Can't reach", &guild_name);
+        return Ok(());
+    }
+    let mut main_msg = main_msg_res.ok().unwrap();
     if url.len() == 0 {
         errf("No query provided", &guild_name);
-        check_msg(msg.channel_id.say(&ctx.http, "Must provide a URL to a video or audio, or a query").await);
-
+        //edit main_msg
+        let _ = main_msg.edit(&ctx.http, |m| {
+            m.content("").embed(|e| {
+                e.title("Error")
+                    .description("No query provided")
+                    .color(Colour::RED)
+            })
+        }).await;
         return Ok(());
     }
 
     let data_map = ctx.data.read().await;
     let mut guild_cache = data_map.get::<Guilds>().unwrap().write().await;
-    let mut query_cache = data_map.get::<Query>().unwrap().write().await;
     let db = &mut data_map.get::<Database>().unwrap().lock().await;
     let guild = msg.guild(&ctx.cache).unwrap();
     let guild_id = guild.id;
-    let gid = i64::from(guild_id);
-    let mut queries: Option<Vec<String>> = None;
     if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
         //copy name of guild
         guild_name = c_guild.get_name().to_string();
-        queries = c_guild.get_query_results();
         c_guild.empty_query_results().update(db);
-        if query_cache.contains_key(&gid) {
-            if let Some(q) = query_cache.get(&i64::from(guild_id)) {
-                //if the difference between time is 5 min or more, wipe it and return
-                let now = Utc::now();
-                let diff = now.signed_duration_since(*q);
-                if diff.num_minutes() >= MAX_QUERY as i64 {
-                    query_cache.remove(&gid);
-                    c_guild.empty_query_results().update(db);
-                    logf("Query cache wiped", &guild_name);
-                    check_msg(msg.channel_id.say(&ctx.http, "Took to long to respond.  Try again!").await);
-                    return Ok(());
-                }
-            }
-        }
     }
 
     let mut searchable = false;
@@ -289,7 +290,13 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         Some(channel) => channel,
         None => {
             errf("Not in a voice channel", &guild_name);
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
+            let _ = main_msg.edit(&ctx.http, |m| {
+                m.content("").embed(|e| {
+                    e.title("Error")
+                        .description("Not in a voice channel")
+                        .color(Colour::RED)
+                })
+            }).await;
 
             return Ok(());
         }
@@ -304,7 +311,13 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let handler_lock_raw = manager.get(guild_id);
     if handler_lock_raw.is_none() {
         errf("Not in a voice channel to play in", &guild_name);
-        check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
+        let _ = main_msg.edit(&ctx.http, |m| {
+            m.content("").embed(|e| {
+                e.title("Error")
+                    .description("Not in a voice channel to play in")
+                    .color(Colour::RED)
+            })
+        }).await;
         return Ok(());
     }
     let handler_lock = handler_lock_raw.unwrap();
@@ -346,9 +359,6 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 _ => (None, None)
             };
             let mut joined: String = "".to_string();
-            if let Some(c_guild) = guild_cache.get_mut(&i64::from(guild_id)) {
-                c_guild.set_query_results(&results.0).update(db);
-            }
             if results.1.is_none() {
                 err = format!("No results found for: {}",&url);
                 errf(&err, &guild_name);
@@ -361,26 +371,27 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             let dbg = format!("DEBUG\n{}",joined);
             dbgf(&dbg, &guild_name);
             //embed
-            let msg_res = msg.channel_id.send_message(&ctx.http,|m| {
-                m.embed(|e| {
+            let _ = main_msg.edit(&ctx.http, |m| {
+                m.content("").embed(|e| {
                     e.title("Search results");
                     e.description(joined);
                     e.color(Colour::BLITZ_BLUE)
                 }).components(|c| {
-                    c.add_action_row(button_builder(&q))
+                    c.add_action_row(button_builder(q))
                 })
             }).await;
-            if msg_res.is_err() {
-                err = format!("Failed sending message");
-                errf(&err, &guild_name);
-                return Ok(());
-            }
-            let msg = msg_res.ok().unwrap();
-            let mci = match msg.await_component_interaction(ctx.shard.as_ref()).timeout(Duration::from_secs(10)).collect_limit(1).await {
-                Some(ci) => ci,
+            let mci = match main_msg.await_component_interaction(ctx.shard.as_ref()).timeout(Duration::from_secs(10)).collect_limit(1).await {
+                Some(mci) => mci,
                 None => {
                     err = format!("No interaction");
                     errf(&err, &guild_name);
+                    let _ = main_msg.edit(&ctx.http, |m| {
+                        m.content("").embed(|e| {
+                            e.title("Error")
+                                .description("Probably failed parsing results")
+                                .color(Colour::RED)
+                        })
+                    }).await;
                     return Ok(());
                 }
             };
@@ -388,22 +399,44 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             if res.is_err() {
                 err = format!("Failed parsing custom id");
                 errf(&err, &guild_name);
+                let _ = main_msg.edit(&ctx.http, |m| {
+                    m.content("").embed(|e| {
+                        e.title("Error")
+                            .description("Failed parsing custom id")
+                            .color(Colour::RED)
+                    })
+                }).await;
                 return Ok(());
             }
-            if queries.is_none() {
+            if results.0.is_none() {
                 err = format!("No queries found");
                 errf(&err, &guild_name);
+                let _ = main_msg.edit(&ctx.http, |m| {
+                    m.content("").embed(|e| {
+                        e.title("Error")
+                            .description("No queries found")
+                            .color(Colour::RED)
+                    })
+                }).await;
                 return Ok(());
             }
-            let urls = queries.unwrap();
+            let urls = results.0.unwrap();
+            if *res.as_ref().ok().unwrap() == urls.len() {
+                let _ = main_msg.delete(ctx).await;
+                return Ok(());
+            }
             let url = urls[*res.as_ref().ok().unwrap()].to_owned();
             let source = match Restartable::ytdl(url, true).await {
                 Ok(source) => source,
                 Err(e) => {
                     errf(&format!("Err invlaid link {:?}", e), &guild_name);
-
-                    check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
+                    let _ = main_msg.edit(&ctx.http, |m| {
+                        m.content("").embed(|e| {
+                            e.title("Error")
+                                .description("Error sourcing ffmpeg")
+                                .color(Colour::RED)
+                        }).set_components(CreateComponents::default())
+                    }).await;
                     return Ok(());
                 },
             };
@@ -425,8 +458,13 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                                 Err(e) => {
                                     errf(&format!("Err not searchable {:?}", e), &guild_name);
 
-                                    check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
+                                    let _ = main_msg.edit(&ctx.http, |m| {
+                                        m.embed(|e| {
+                                            e.title("Error")
+                                                .description("Errer not searchable")
+                                                .color(Colour::RED)
+                                        })
+                                    }).await;
                                     return Ok(());
                                 },
                             };
@@ -435,7 +473,13 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                     }
                     YoutubeDlOutput::SingleVideo(yt_vid) => {
                         errf(&format!("Err unreasonable dead end with {:?}",yt_vid.url.unwrap()), &guild_name);
-                        check_msg(msg.channel_id.say(&ctx.http, "Uh oh dead end").await);
+                        let _ = main_msg.edit(&ctx.http, |m| {
+                            m.embed(|e| {
+                                e.title("Error")
+                                    .description("Uh oh dead en")
+                                    .color(Colour::RED)
+                            })
+                        }).await;
                     }
                 }
             }
@@ -444,9 +488,13 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 Ok(source) => source,
                 Err(e) => {
                     errf(&format!("Err invlaid link {:?}", e), &guild_name);
-
-                    check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
+                    let _ = main_msg.edit(&ctx.http, |m| {
+                        m.embed(|e| {
+                            e.title("Error")
+                                .description("Errer sourcing ffmpeg")
+                                .color(Colour::RED)
+                        }).set_components(CreateComponents::default())
+                    }).await;
                     return Ok(());
                 },
             };
@@ -455,15 +503,31 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     }
     if !handler.queue().is_empty(){
         logf("Queued", &guild_name);
-        check_msg(msg.channel_id.say(&ctx.http, "Queued").await);
+        let _ = main_msg.edit(&ctx.http, |m| {
+            m.content("").embed(|e| {
+                e.title("Queued")
+                    .color(Colour::BLITZ_BLUE)
+            }).set_components(CreateComponents::default())
+        }).await;
         return Ok(());
     }
     if let Err(e) = handler.queue().resume(){
         errf(&format!("Failed {:?}", e), &guild_name);
-        check_msg(msg.channel_id.say(&ctx.http, format!("Failed: {:?}", e)).await);
+        let _ = main_msg.edit(&ctx.http, |m| {
+            m.content("").embed(|e| {
+                e.title("Error")
+                    .description("Failed to resume")
+                    .color(Colour::RED)
+            }).set_components(CreateComponents::default())
+        }).await;
     }else if !searchable{
         logf("Playing...", &guild_name);
-        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
+        let _ = main_msg.edit(&ctx.http, |m| {
+            m.content("").embed(|e| {
+                e.title("Playing...")
+                    .color(Colour::BLITZ_BLUE)
+            }).set_components(CreateComponents::default())
+        }).await;
     }
     Ok(())
 }

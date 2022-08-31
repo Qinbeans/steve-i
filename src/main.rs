@@ -354,11 +354,13 @@ async fn main() {
                     logf(&format!("prefix {}", def_pfx), guild_name);
                 }
                 if !guild_cache.contains_key(&guild_id){
+                    logf("Default", guild_name);
                     return Some(def_pfx);
                 }
                 let guild = guild_cache.get(&guild_id).unwrap();
                 let g_pfx = guild.prefix.as_ref().unwrap();//circumvent move
                 if guild.prefix.is_none(){
+                    logf("Default", guild_name);
                     return Some(def_pfx);
                 }
                 logf(&format!("prefix is {}...", g_pfx), guild_name);
@@ -402,7 +404,6 @@ async fn main() {
         data.insert::<Guilds>(Arc::new(RwLock::new(HashMap::default())));
         data.insert::<GuUs>(Arc::new(RwLock::new(Vec::new())));
         data.insert::<SpotifyClient>(Arc::new(Mutex::new(s_client)));
-        data.insert::<Query>(Arc::new(RwLock::new(HashMap::default())));
     }
     if let Err(why) = client.start_shards(5).await {
         errf(&format!("Steve is hurt!! Call an ambulance stat!! He has {:?}!!",why), "Steve");

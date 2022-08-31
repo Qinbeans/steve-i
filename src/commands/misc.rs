@@ -60,6 +60,7 @@ impl TypeMapKey for SpotifyClient {
     type Value = Arc<Mutex<ClientCredsSpotify>>;
 }
 
+//deprecated
 pub struct Query;
 
 impl TypeMapKey for Query {
