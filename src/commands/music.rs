@@ -380,17 +380,17 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                     c.add_action_row(button_builder(q))
                 })
             }).await;
-            let mci = match main_msg.await_component_interaction(ctx.shard.as_ref()).timeout(Duration::from_secs(10)).collect_limit(1).await {
+            let mci = match main_msg.await_component_interaction(ctx.shard.as_ref()).timeout(Duration::from_secs(15)).collect_limit(1).await {
                 Some(mci) => mci,
                 None => {
                     err = format!("No interaction");
                     errf(&err, &guild_name);
                     let _ = main_msg.edit(&ctx.http, |m| {
                         m.content("").embed(|e| {
-                            e.title("Error")
-                                .description("Probably failed parsing results")
-                                .color(Colour::RED)
-                        })
+                            e.title("Timeout")
+                                .description("Took too long")
+                                .color(Colour::ORANGE)
+                        }).set_components(CreateComponents::default())
                     }).await;
                     return Ok(());
                 }
@@ -404,7 +404,7 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                         e.title("Error")
                             .description("Failed parsing custom id")
                             .color(Colour::RED)
-                    })
+                    }).set_components(CreateComponents::default())
                 }).await;
                 return Ok(());
             }
@@ -416,7 +416,7 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                         e.title("Error")
                             .description("No queries found")
                             .color(Colour::RED)
-                    })
+                    }).set_components(CreateComponents::default())
                 }).await;
                 return Ok(());
             }
